@@ -325,7 +325,7 @@ func NewComponentIO(
 	}, nil
 }
 
-func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value) ([]*ComponentIO, error) {
+func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value) (IOs, error) {
 	if parentID == uuid.Nil {
 		return nil, errors.New("invalid parent ID")
 	}
@@ -334,7 +334,7 @@ func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value) ([]*ComponentI
 	}
 
 	vt := v.Type()
-	ios := make([]*ComponentIO, 0, vt.NumIn()+vt.NumOut())
+	ios := make(IOs, 0, vt.NumIn()+vt.NumOut())
 	for i := 0; i < vt.NumIn(); i++ {
 		p := vt.In(i)
 		e, err := NewComponentIO(
