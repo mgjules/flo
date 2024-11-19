@@ -1,8 +1,10 @@
 package flo_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"testing"
 
 	"github.com/mgjules/flo"
@@ -20,7 +22,7 @@ func (t compA) AddVal(ctx context.Context, f1 int) int {
 	return t.val + f1
 }
 
-func compBFn(f1 int) (int, error) {
+func compBFn(f1 int, d1 bool) (int, error) {
 	if f1 < 0 {
 		return 0, errors.New("f1 is less than zero")
 	}
@@ -34,6 +36,14 @@ func compCFn(ctx context.Context, a1 int, b1 int) (int, error) {
 	}
 
 	return a1 + b1, nil
+}
+
+func compDFn() bool {
+	return true
+}
+
+func compEFn() {
+	// So lonely.
 }
 
 func TestFlo(t *testing.T) {
@@ -69,6 +79,26 @@ func TestFlo(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, compC)
 	err = f.AddComponent(compC)
+	require.NoError(t, err)
+
+	compD, err := flo.NewComponent(
+		"Test Comp D Label",
+		"Test Comp D Description",
+		compDFn,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, compD)
+	err = f.AddComponent(compD)
+	require.NoError(t, err)
+
+	compE, err := flo.NewComponent(
+		"Test Comp E Label",
+		"Test Comp E Description",
+		compEFn,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, compE)
+	err = f.AddComponent(compE)
 	require.NoError(t, err)
 
 	t.Run("Cannot add component twice", func(t *testing.T) {
@@ -113,10 +143,13 @@ func TestFlo(t *testing.T) {
 			err = f.ConnectComponent(f.ID, f.IOs[1].ID, compB.ID, compB.IOs[0].ID)
 			require.NoError(t, err)
 
+			err = f.ConnectComponent(compD.ID, compD.IOs[0].ID, compB.ID, compB.IOs[1].ID)
+			require.NoError(t, err)
+
 			err = f.ConnectComponent(compA.ID, compA.IOs[2].ID, compC.ID, compC.IOs[1].ID)
 			require.NoError(t, err)
 
-			err = f.ConnectComponent(compB.ID, compB.IOs[1].ID, compC.ID, compC.IOs[2].ID)
+			err = f.ConnectComponent(compB.ID, compB.IOs[2].ID, compC.ID, compC.IOs[2].ID)
 			require.NoError(t, err)
 
 			err = f.ConnectComponent(compC.ID, compC.IOs[3].ID, f.ID, f.IOs[2].ID)
@@ -132,5 +165,15 @@ func TestFlo(t *testing.T) {
 	t.Run("Cannot delete component with connections", func(t *testing.T) {
 		err = f.DeleteComponent(compA.ID)
 		require.ErrorContains(t, err, "has connections")
+	})
+
+	t.Run("Render", func(t *testing.T) {
+		buf := &bytes.Buffer{}
+		err = f.Render(context.Background(), buf, func(ctx context.Context, w io.Writer, c *flo.Component) error {
+			_, err := w.Write([]byte("[" + c.Label + "]"))
+			return err
+		})
+		require.NoError(t, err)
+		require.Equal(t, "[Test Comp A Label][Test Comp D Label][Test Comp B Label][Test Comp C Label][Test Comp E Label]", buf.String())
 	})
 }

@@ -1,8 +1,10 @@
 package flo
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"sync"
 
@@ -298,6 +300,136 @@ func (f *Flo) DeleteConnection(connectionID uuid.UUID) error {
 	lo.Reject(inComponentIO.Connections, func(conn *ComponentConnection, _ int) bool {
 		return conn.ID == connectionID
 	})
+
+	return nil
+}
+
+type RenderFn func(
+	ctx context.Context,
+	w io.Writer,
+	c *Component,
+) error
+
+func (f *Flo) Render(
+	ctx context.Context,
+	w io.Writer,
+	render RenderFn,
+) error {
+	if render == nil {
+		return errors.New("missing render function")
+	}
+
+	rendered := make(map[uuid.UUID]struct{}, len(f.Components))
+
+	floINs, _ := f.IOs.SeparateINsOUTs()
+	// starts at the ingoing of a flo.
+	for _, in := range floINs {
+		for _, conn := range in.Connections {
+			c, found := f.Components[conn.InComponentID]
+			if !found {
+				// Oh NO!! We should not never have a connection to a ghost component.
+				return fmt.Errorf(
+					"misconfigured connection id %q: missing ingoing component %q",
+					conn.ID, conn.InComponentID,
+				)
+			}
+
+			if err := f.RenderComponent(
+				ctx,
+				w,
+				c,
+				render,
+				rendered,
+			); err != nil {
+				return fmt.Errorf(
+					"failed to render component: %v", err,
+				)
+			}
+		}
+	}
+
+	// TODO: handle orphaned components.
+	for _, c := range f.Components {
+		if _, found := rendered[c.ID]; found {
+			continue
+		}
+
+		if err := f.RenderComponent(
+			ctx,
+			w,
+			c,
+			render,
+			rendered,
+		); err != nil {
+			return fmt.Errorf(
+				"failed to render component: %v", err,
+			)
+		}
+	}
+
+	return nil
+}
+
+func (f *Flo) RenderComponent(
+	ctx context.Context,
+	w io.Writer,
+	c *Component,
+	render RenderFn,
+	rendered map[uuid.UUID]struct{},
+) error {
+	if c == nil {
+		return errors.New("missing component")
+	}
+	if render == nil {
+		return errors.New("missing render function")
+	}
+	if rendered == nil {
+		return errors.New("missing rendered tracker")
+	}
+
+	if _, found := rendered[c.ID]; found {
+		// Skip as we already rendered that component.
+		return nil
+	}
+
+	ins, _ := c.IOs.SeparateINsOUTs()
+	for _, in := range ins {
+		for _, conn := range in.Connections {
+			if f.ID == conn.OutComponentID {
+				// Outgoing was flo so considered to have been rendered already.
+				continue
+			}
+
+			if _, found := rendered[conn.OutComponentID]; found {
+				continue
+			}
+
+			outC, found := f.Components[conn.OutComponentID]
+			if !found {
+				// Again! Ghost component!
+				return fmt.Errorf(
+					"misconfigured connection id %q: missing outgoing component %q",
+					conn.ID, conn.OutComponentID,
+				)
+			}
+
+			if err := f.RenderComponent(
+				ctx,
+				w,
+				outC,
+				render,
+				rendered,
+			); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := render(ctx, w, c); err != nil {
+		return err
+	}
+
+	rendered[c.ID] = struct{}{}
 
 	return nil
 }
