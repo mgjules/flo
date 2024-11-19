@@ -48,7 +48,8 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, compA)
-	f.AddComponent(compA)
+	err = f.AddComponent(compA)
+	require.NoError(t, err)
 
 	compB, err := flo.NewComponent(
 		"Test Comp B Label",
@@ -57,7 +58,8 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, compB)
-	f.AddComponent(compB)
+	err = f.AddComponent(compB)
+	require.NoError(t, err)
 
 	compC, err := flo.NewComponent(
 		"Test Comp C Label",
@@ -66,7 +68,13 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, compC)
-	f.AddComponent(compC)
+	err = f.AddComponent(compC)
+	require.NoError(t, err)
+
+	t.Run("Cannot add component twice", func(t *testing.T) {
+		err = f.AddComponent(compC)
+		require.ErrorContains(t, err, "already exists")
+	})
 
 	t.Run("Connect flos & components", func(t *testing.T) {
 		t.Run("Cannot connect to self", func(t *testing.T) {
@@ -119,5 +127,10 @@ func TestFlo(t *testing.T) {
 			err = f.ConnectComponent(f.ID, f.IOs[1].ID, compC.ID, compC.IOs[2].ID)
 			require.ErrorContains(t, err, "already has a connection")
 		})
+	})
+
+	t.Run("Cannot delete component with connections", func(t *testing.T) {
+		err = f.DeleteComponent(compA.ID)
+		require.ErrorContains(t, err, "has connections")
 	})
 }
