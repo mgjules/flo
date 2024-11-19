@@ -252,7 +252,7 @@ func (f *Flo) ConnectComponent(
 	inComponentIO.Connections = append(inComponentIO.Connections, conn)
 	f.connectionIndex[conn.ID] = conn
 
-	if len(outComponentIO.Connections) == 1 {
+	if outComponentIO.Name == "" {
 		outComponentIO.Name = `f` + xid.New().String()
 	}
 	inComponentIO.Name = outComponentIO.Name
@@ -594,4 +594,15 @@ func (ios IOs) HasConnections() bool {
 
 		return len(io.Connections) > 0
 	})
+}
+
+func (t ComponentIOType) String() string {
+	switch t {
+	case ComponentIOTypeIN:
+		return "IN"
+	case ComponentIOTypeOUT:
+		return "OUT"
+	default:
+		return "UNKNOWN"
+	}
 }
