@@ -18,9 +18,8 @@ import (
 type Flo struct {
 	mu         sync.Mutex
 	ID         uuid.UUID
-	RootID     uuid.UUID
 	Components map[uuid.UUID]*Component
-	IOs        map[uuid.UUID]*ComponentIO
+	IOs        IOs
 
 	// handy to quickly find a connection details.
 	connectionIndex map[uuid.UUID]*ComponentConnection
@@ -32,7 +31,7 @@ type Component struct {
 	Label       string
 	Description string
 	Value       reflect.Value // Enable use of instantiated object's methods or functions.
-	IOs         map[uuid.UUID]*ComponentIO
+	IOs         IOs
 }
 
 type ComponentIO struct {
@@ -52,6 +51,8 @@ type ComponentConnection struct {
 	InComponentIOID  uuid.UUID
 }
 
+type IOs []*ComponentIO
+
 type ComponentIOType int
 
 const (
@@ -63,8 +64,9 @@ const (
 // NewFlo needs fn to make IOs creation much more pleasant.
 func NewFlo(fn any) (*Flo, error) {
 	f := Flo{
-		ID:         uuid.New(),
-		Components: make(map[uuid.UUID]*Component),
+		ID:              uuid.New(),
+		Components:      make(map[uuid.UUID]*Component),
+		connectionIndex: make(map[uuid.UUID]*ComponentConnection),
 	}
 
 	ios, err := NewComponentIOsFromFunc(f.ID, reflect.ValueOf(fn))
@@ -82,17 +84,12 @@ func (f *Flo) AddComponent(c *Component) {
 	}
 
 	f.mu.Lock()
+	defer f.mu.Unlock()
 	if _, found := f.Components[c.ID]; found {
 		// don't override!
 		return
 	}
-
 	f.Components[c.ID] = c
-
-	if len(f.Components) == 1 {
-		f.RootID = c.ID
-	}
-	f.mu.Unlock()
 }
 
 // ConnectComponent inter connects components or flos.
@@ -120,7 +117,7 @@ func (f *Flo) ConnectComponent(
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	var outIOs map[uuid.UUID]*ComponentIO
+	var outIOs IOs
 
 	isFloOutgoing := outComponentID == f.ID
 	if !isFloOutgoing {
@@ -132,12 +129,12 @@ func (f *Flo) ConnectComponent(
 	} else {
 		outIOs = f.IOs
 	}
-	outComponentIO, found := outIOs[outComponentIOID]
+	outComponentIO, found := outIOs.GetByID(outComponentIOID)
 	if !found {
 		return fmt.Errorf("no component io id %q found on out component id %q", outComponentIOID, outComponentID)
 	}
 
-	var inIOs map[uuid.UUID]*ComponentIO
+	var inIOs IOs
 
 	isFloIngoing := inComponentID == f.ID
 	if !isFloIngoing {
@@ -149,7 +146,7 @@ func (f *Flo) ConnectComponent(
 	} else {
 		inIOs = f.IOs
 	}
-	inComponentIO, found := inIOs[inComponentIOID]
+	inComponentIO, found := inIOs.GetByID(inComponentIOID)
 	if !found {
 		return fmt.Errorf("no component io id %q found on in component id %q", inComponentIOID, inComponentID)
 	}
@@ -161,21 +158,21 @@ func (f *Flo) ConnectComponent(
 
 	// Remember that if the component is a flo we inverse the flow check ;) (no pun intended).
 	if !isFloOutgoing && outComponentIO.Type != ComponentIOTypeOUT {
-		return fmt.Errorf("out component io id %q is not out type", outComponentIOID)
+		return fmt.Errorf("out component io id %q is not of type out", outComponentIOID)
 	} else if isFloOutgoing && outComponentIO.Type != ComponentIOTypeIN {
-		return fmt.Errorf("out flo io id %q is not in type", outComponentIOID)
+		return fmt.Errorf("out flo io id %q is not of type in", outComponentIOID)
 	}
 	if !isFloIngoing && inComponentIO.Type != ComponentIOTypeIN {
-		return fmt.Errorf("out component io id %q is not in type", inComponentIOID)
+		return fmt.Errorf("out component io id %q is not of type in", inComponentIOID)
 	} else if isFloIngoing && inComponentIO.Type != ComponentIOTypeOUT {
-		return fmt.Errorf("out flo io id %q is not out type", inComponentIOID)
+		return fmt.Errorf("out flo io id %q is not of type out", inComponentIOID)
 	}
 
 	if len(inComponentIO.Connections) > 0 {
 		return fmt.Errorf("in component io id %q already has a connection", inComponentIOID)
 	}
 
-	duplicateConns := lo.PickBy(outIOs, func(_ uuid.UUID, io *ComponentIO) bool {
+	_, found = lo.Find(outIOs, func(io *ComponentIO) bool {
 		if io == nil ||
 			(!isFloOutgoing && io.Type != ComponentIOTypeOUT) ||
 			(isFloOutgoing && io.Type != ComponentIOTypeIN) {
@@ -192,7 +189,7 @@ func (f *Flo) ConnectComponent(
 
 		return found
 	})
-	if len(duplicateConns) > 0 {
+	if found {
 		return fmt.Errorf(
 			"in component id %q already has a connection with out component id %q through io id %q",
 			inComponentID,
@@ -259,7 +256,7 @@ func (f *Flo) DeleteConnection(connectionID uuid.UUID) error {
 	if !found {
 		return fmt.Errorf("no out component id %q found in flo", conn.OutComponentID)
 	}
-	outComponentIO, found := outComponent.IOs[conn.OutComponentIOID]
+	outComponentIO, found := outComponent.IOs.GetByID(conn.OutComponentIOID)
 	if !found {
 		return fmt.Errorf("no component io id %q found on out component id %q", conn.OutComponentIOID, conn.OutComponentID)
 	}
@@ -270,7 +267,7 @@ func (f *Flo) DeleteConnection(connectionID uuid.UUID) error {
 	if !found {
 		return fmt.Errorf("no in component id %q found in flo", conn.OutComponentID)
 	}
-	inComponentIO, found := inComponent.IOs[conn.InComponentIOID]
+	inComponentIO, found := inComponent.IOs.GetByID(conn.InComponentIOID)
 	if !found {
 		return fmt.Errorf("no component io id %q found on in component id %q", conn.InComponentIOID, conn.InComponentID)
 	}
@@ -328,7 +325,7 @@ func NewComponentIO(
 	}, nil
 }
 
-func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value) (map[uuid.UUID]*ComponentIO, error) {
+func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value) ([]*ComponentIO, error) {
 	if parentID == uuid.Nil {
 		return nil, errors.New("invalid parent ID")
 	}
@@ -337,7 +334,7 @@ func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value) (map[uuid.UUID
 	}
 
 	vt := v.Type()
-	ios := make(map[uuid.UUID]*ComponentIO, vt.NumIn()+vt.NumOut())
+	ios := make([]*ComponentIO, 0, vt.NumIn()+vt.NumOut())
 	for i := 0; i < vt.NumIn(); i++ {
 		p := vt.In(i)
 		e, err := NewComponentIO(
@@ -349,7 +346,7 @@ func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value) (map[uuid.UUID
 			return nil, fmt.Errorf("unexpected error for argument %d: %w", i+1, err)
 		}
 
-		ios[e.ID] = e
+		ios = append(ios, e)
 	}
 
 	for i := 0; i < vt.NumOut(); i++ {
@@ -363,7 +360,7 @@ func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value) (map[uuid.UUID
 			return nil, fmt.Errorf("unexpected error for return value %d: %w", i+1, err)
 		}
 
-		ios[e.ID] = e
+		ios = append(ios, e)
 	}
 
 	return ios, nil
@@ -395,4 +392,18 @@ func NewComponentConnect(
 		InComponentID:    inComponentID,
 		InComponentIOID:  inComponentIOID,
 	}, nil
+}
+
+func (ios IOs) GetByID(id uuid.UUID) (*ComponentIO, bool) {
+	if ios == nil || id == uuid.Nil {
+		return nil, false
+	}
+
+	return lo.Find(ios, func(io *ComponentIO) bool {
+		if io == nil {
+			return false
+		}
+
+		return io.ID == id
+	})
 }
