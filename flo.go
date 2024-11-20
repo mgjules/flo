@@ -475,13 +475,13 @@ func (f *Flo) RenderComponent(
 	var hasErrorReturn bool
 	code := jen.Comment(c.Description).Line().ListFunc(func(g *jen.Group) {
 		for _, out := range outs {
+			if len(out.Connections) > 0 {
+				g.Id(out.Name)
+				continue
+			}
 			if out.IsError {
 				hasErrorReturn = true
 				g.Err()
-				continue
-			}
-			if len(out.Connections) > 0 {
-				g.Id(out.Name)
 				continue
 			}
 			g.Id("_")
@@ -497,7 +497,16 @@ func (f *Flo) RenderComponent(
 	}).Line().Do(func(s *jen.Statement) {
 		if hasErrorReturn {
 			s.If(jen.Err().Op("!=").Id("nil")).Block(
-				jen.Return(jen.Id("err")),
+				jen.ReturnFunc(func(g *jen.Group) {
+					_, outs := f.IOs.SeparateINsOUTs()
+					for _, out := range outs {
+						if out.IsError {
+							g.Err()
+							continue
+						}
+						g.Id(fmt.Sprintf("%v", reflect.Zero(out.RType).Interface()))
+					}
+				}),
 			).Line()
 		}
 	}).Line()
