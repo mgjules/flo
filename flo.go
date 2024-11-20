@@ -123,6 +123,28 @@ func (f *Flo) AddIO(io *ComponentIO) error {
 }
 
 func (f *Flo) DeleteIO(id uuid.UUID) error {
+	if id == uuid.Nil {
+		return errors.New("invalid id")
+	}
+
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	io, found := lo.Find(f.IOs, func(io *ComponentIO) bool {
+		return io.ID == id
+	})
+	if !found {
+		return fmt.Errorf("flo io id %q not found", id)
+	}
+
+	if len(io.Connections) > 0 {
+		return fmt.Errorf("flo io id %q has connections", id)
+	}
+
+	f.IOs = lo.Reject(f.IOs, func(io *ComponentIO, _ int) bool {
+		return io.ID == id
+	})
+
 	return nil
 }
 
@@ -327,7 +349,7 @@ func (f *Flo) DeleteConnection(connectionID uuid.UUID) error {
 		return fmt.Errorf("no component io id %q found on out component id %q", conn.OutComponentIOID, conn.OutComponentID)
 	}
 
-	lo.Reject(outComponentIO.Connections, func(conn *ComponentConnection, _ int) bool {
+	outComponentIO.Connections = lo.Reject(outComponentIO.Connections, func(conn *ComponentConnection, _ int) bool {
 		return conn.ID == connectionID
 	})
 

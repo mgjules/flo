@@ -52,45 +52,47 @@ func TestFlo(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, f)
 
-	pCtx, err := flo.NewComponentIO(
-		"ctx",
-		flo.ComponentIOTypeIN,
-		reflect.TypeFor[context.Context](),
-		f.ID,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, pCtx)
-	require.NoError(t, f.AddIO(pCtx))
+	t.Run("Add flo IO", func(t *testing.T) {
+		pCtx, err := flo.NewComponentIO(
+			"ctx",
+			flo.ComponentIOTypeIN,
+			reflect.TypeFor[context.Context](),
+			f.ID,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, pCtx)
+		require.NoError(t, f.AddIO(pCtx))
 
-	pIn, err := flo.NewComponentIO(
-		"in",
-		flo.ComponentIOTypeIN,
-		reflect.TypeFor[int](),
-		f.ID,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, pIn)
-	require.NoError(t, f.AddIO(pIn))
+		pIn, err := flo.NewComponentIO(
+			"in",
+			flo.ComponentIOTypeIN,
+			reflect.TypeFor[int](),
+			f.ID,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, pIn)
+		require.NoError(t, f.AddIO(pIn))
 
-	rInt, err := flo.NewComponentIO(
-		"",
-		flo.ComponentIOTypeOUT,
-		reflect.TypeFor[int](),
-		f.ID,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, rInt)
-	require.NoError(t, f.AddIO(rInt))
+		rInt, err := flo.NewComponentIO(
+			"",
+			flo.ComponentIOTypeOUT,
+			reflect.TypeFor[int](),
+			f.ID,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, rInt)
+		require.NoError(t, f.AddIO(rInt))
 
-	rErr, err := flo.NewComponentIO(
-		"",
-		flo.ComponentIOTypeOUT,
-		reflect.TypeFor[error](),
-		f.ID,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, rErr)
-	require.NoError(t, f.AddIO(rErr))
+		rErr, err := flo.NewComponentIO(
+			"",
+			flo.ComponentIOTypeOUT,
+			reflect.TypeFor[error](),
+			f.ID,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, rErr)
+		require.NoError(t, f.AddIO(rErr))
+	})
 
 	compA, err := flo.NewComponent(
 		"CompA",
