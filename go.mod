@@ -7,6 +7,7 @@ require (
 	github.com/rs/xid v1.6.0
 	github.com/samber/lo v1.47.0
 	github.com/stretchr/testify v1.9.0
+	github.com/yassinebenaid/godump v0.11.1
 )
 
 require (

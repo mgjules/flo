@@ -5,10 +5,10 @@ import (
 	"context"
 	"errors"
 	"io"
+	"reflect"
 	"testing"
 
 	"github.com/mgjules/flo"
-	"github.com/samber/lo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,11 +47,55 @@ func compEFn() {
 }
 
 func TestFlo(t *testing.T) {
-	f, err := flo.NewFlo(lo.Empty[floFn]())
+	f, err := flo.NewFlo(
+		"TestSync",
+		"Test Flo Label",
+		"Test Flo Description",
+	)
 	require.NoError(t, err)
 	require.NotNil(t, f)
 
+	pCtx, err := flo.NewComponentIO(
+		"ctx",
+		flo.ComponentIOTypeIN,
+		reflect.TypeFor[context.Context](),
+		f.ID,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, pCtx)
+
+	pIn, err := flo.NewComponentIO(
+		"in",
+		flo.ComponentIOTypeIN,
+		reflect.TypeFor[int](),
+		f.ID,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, pIn)
+
+	rInt, err := flo.NewComponentIO(
+		"",
+		flo.ComponentIOTypeOUT,
+		reflect.TypeFor[int](),
+		f.ID,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, rInt)
+
+	rErr, err := flo.NewComponentIO(
+		"",
+		flo.ComponentIOTypeOUT,
+		reflect.TypeFor[error](),
+		f.ID,
+	)
+	require.NoError(t, err)
+	require.NotNil(t, rErr)
+
+	err = f.AddIOs(pCtx, pIn, rInt, rErr)
+	require.NoError(t, err)
+
 	compA, err := flo.NewComponent(
+		"CompA",
 		"Test Comp A Label",
 		"Test Comp A Description",
 		(compA{val: 10}).AddVal,
@@ -62,6 +106,7 @@ func TestFlo(t *testing.T) {
 	require.NoError(t, err)
 
 	compB, err := flo.NewComponent(
+		"CompB",
 		"Test Comp B Label",
 		"Test Comp B Description",
 		compBFn,
@@ -72,6 +117,7 @@ func TestFlo(t *testing.T) {
 	require.NoError(t, err)
 
 	compC, err := flo.NewComponent(
+		"CompC",
 		"Test Comp C Label",
 		"Test Comp C Description",
 		compCFn,
@@ -82,6 +128,7 @@ func TestFlo(t *testing.T) {
 	require.NoError(t, err)
 
 	compD, err := flo.NewComponent(
+		"CompD",
 		"Test Comp D Label",
 		"Test Comp D Description",
 		compDFn,
@@ -92,6 +139,7 @@ func TestFlo(t *testing.T) {
 	require.NoError(t, err)
 
 	compE, err := flo.NewComponent(
+		"CompE",
 		"Test Comp E Label",
 		"Test Comp E Description",
 		compEFn,
@@ -176,4 +224,7 @@ func TestFlo(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, "[Test Comp A Label][Test Comp D Label][Test Comp B Label][Test Comp C Label][Test Comp E Label]", buf.String())
 	})
+
+	// f.PrettyDump(os.Stdout)
+	// t.FailNow()
 }

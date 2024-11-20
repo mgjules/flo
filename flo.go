@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/rs/xid"
 	"github.com/samber/lo"
+	"github.com/yassinebenaid/godump"
 )
 
 // Flo is a fancy name for a bidirectional graph with some opionionated rules.
@@ -18,10 +19,13 @@ import (
 // IOs are just the function parameters and return values.
 // Nodes are called components and represent function calls.
 type Flo struct {
-	mu         sync.Mutex
-	ID         uuid.UUID
-	Components map[uuid.UUID]*Component
-	IOs        IOs
+	mu          sync.Mutex
+	ID          uuid.UUID
+	Name        string
+	Label       string
+	Description string
+	Components  map[uuid.UUID]*Component
+	IOs         IOs
 
 	// handy to quickly find a connection details.
 	connectionIndex map[uuid.UUID]*ComponentConnection
@@ -29,7 +33,7 @@ type Flo struct {
 
 type Component struct {
 	ID          uuid.UUID
-	Name        string // func name retrieved from Value.
+	Name        string
 	Label       string
 	Description string
 	Value       reflect.Value // Enable use of instantiated object's methods or functions.
@@ -64,20 +68,52 @@ const (
 )
 
 // NewFlo needs fn to make IOs creation much more pleasant.
-func NewFlo(fn any) (*Flo, error) {
-	f := Flo{
-		ID:              uuid.New(),
+func NewFlo(name, label, description string) (*Flo, error) {
+	if name == "" {
+		return nil, errors.New("missing name")
+	}
+	if label == "" {
+		return nil, errors.New("missing label")
+	}
+	if description == "" {
+		return nil, errors.New("missing description")
+	}
+
+	id := uuid.New()
+	return &Flo{
+		ID:              id,
+		Name:            name,
+		Label:           label,
+		Description:     description,
 		Components:      make(map[uuid.UUID]*Component),
+		IOs:             make(IOs, 0),
 		connectionIndex: make(map[uuid.UUID]*ComponentConnection),
+	}, nil
+}
+
+func (f *Flo) PrettyDump(w io.Writer) error {
+	var d godump.Dumper
+	return d.Fprint(w, f)
+}
+
+func (f *Flo) AddIOs(ios ...*ComponentIO) error {
+	ios = lo.Compact(ios)
+	if len(ios) == 0 {
+		return errors.New("missing ios")
 	}
 
-	ios, err := NewComponentIOsFromFunc(f.ID, reflect.ValueOf(fn), true)
-	if err != nil {
-		return nil, fmt.Errorf("cannot generate component ios: %v", err)
-	}
-	f.IOs = ios
+	f.mu.Lock()
+	defer f.mu.Unlock()
 
-	return &f, nil
+	// Ensure we have the correct parent id.
+	ios = lo.Map(ios, func(io *ComponentIO, _ int) *ComponentIO {
+		io.ParentID = f.ID
+		return io
+	})
+
+	f.IOs = append(f.IOs, ios...)
+
+	return nil
 }
 
 func (f *Flo) AddComponent(c *Component) error {
@@ -252,9 +288,6 @@ func (f *Flo) ConnectComponent(
 	inComponentIO.Connections = append(inComponentIO.Connections, conn)
 	f.connectionIndex[conn.ID] = conn
 
-	if outComponentIO.Name == "" {
-		outComponentIO.Name = `f` + xid.New().String()
-	}
 	inComponentIO.Name = outComponentIO.Name
 
 	return nil
@@ -297,9 +330,7 @@ func (f *Flo) DeleteConnection(connectionID uuid.UUID) error {
 		return fmt.Errorf("no component io id %q found on in component id %q", conn.InComponentIOID, conn.InComponentID)
 	}
 
-	lo.Reject(inComponentIO.Connections, func(conn *ComponentConnection, _ int) bool {
-		return conn.ID == connectionID
-	})
+	inComponentIO.Connections = make([]*ComponentConnection, 0)
 
 	return nil
 }
@@ -435,26 +466,26 @@ func (f *Flo) RenderComponent(
 }
 
 func NewComponent(
-	label, description string,
+	name, label, description string,
 	fn any,
 ) (*Component, error) {
+	if name == "" {
+		return nil, errors.New("missing name")
+	}
+
 	c := Component{
 		ID:          uuid.New(),
+		Name:        name,
 		Label:       label,
 		Description: description,
 		Value:       reflect.ValueOf(fn),
 	}
 
-	ios, err := NewComponentIOsFromFunc(c.ID, c.Value, false)
+	ios, err := NewComponentIOsFromFunc(c.ID, c.Value)
 	if err != nil {
 		return nil, fmt.Errorf("cannot generate component ios: %v", err)
 	}
 	c.IOs = ios
-
-	c.Name = c.Value.Type().Name()
-	if c.Name == "" {
-		c.Name = xid.New().String()
-	}
 
 	return &c, nil
 }
@@ -468,6 +499,9 @@ func NewComponentIO(
 	if typ == ComponentIOTypeUnknown {
 		return nil, errors.New("unknown component io type")
 	}
+	if name == "" && typ == ComponentIOTypeOUT {
+		name = `io` + xid.New().String()
+	}
 	if rType == nil || rType.Kind() == reflect.Invalid {
 		return nil, errors.New("invalid component io reflect type")
 	}
@@ -477,13 +511,14 @@ func NewComponentIO(
 
 	return &ComponentIO{
 		ID:       uuid.New(),
+		Name:     name,
 		Type:     typ,
 		RType:    rType,
 		ParentID: parentID,
 	}, nil
 }
 
-func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value, isFlo bool) (IOs, error) {
+func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value) (IOs, error) {
 	if parentID == uuid.Nil {
 		return nil, errors.New("invalid parent ID")
 	}
@@ -495,12 +530,8 @@ func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value, isFlo bool) (I
 	ios := make(IOs, 0, vt.NumIn()+vt.NumOut())
 	for i := 0; i < vt.NumIn(); i++ {
 		p := vt.In(i)
-		var name string
-		if isFlo {
-			name = p.Name()
-		}
 		e, err := NewComponentIO(
-			name,
+			"",
 			ComponentIOTypeIN,
 			p,
 			parentID,
