@@ -96,23 +96,33 @@ func (f *Flo) PrettyDump(w io.Writer) error {
 	return d.Fprint(w, f)
 }
 
-func (f *Flo) AddIOs(ios ...*ComponentIO) error {
-	ios = lo.Compact(ios)
-	if len(ios) == 0 {
-		return errors.New("missing ios")
+func (f *Flo) AddIO(io *ComponentIO) error {
+	if io == nil {
+		return errors.New("missing io")
 	}
 
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	if _, found := lo.Find(f.IOs, func(fio *ComponentIO) bool {
+		return fio.Name == io.Name && fio.Type == io.Type
+	}); found {
+		return fmt.Errorf(
+			"io with same name %q and type %q already exists",
+			io.Name,
+			io.Type,
+		)
+	}
+
 	// Ensure we have the correct parent id.
-	ios = lo.Map(ios, func(io *ComponentIO, _ int) *ComponentIO {
-		io.ParentID = f.ID
-		return io
-	})
+	io.ParentID = f.ID
 
-	f.IOs = append(f.IOs, ios...)
+	f.IOs = append(f.IOs, io)
 
+	return nil
+}
+
+func (f *Flo) DeleteIO(id uuid.UUID) error {
 	return nil
 }
 
@@ -335,21 +345,10 @@ func (f *Flo) DeleteConnection(connectionID uuid.UUID) error {
 	return nil
 }
 
-type RenderFn func(
-	ctx context.Context,
-	w io.Writer,
-	c *Component,
-) error
-
 func (f *Flo) Render(
 	ctx context.Context,
 	w io.Writer,
-	render RenderFn,
 ) error {
-	if render == nil {
-		return errors.New("missing render function")
-	}
-
 	rendered := make(map[uuid.UUID]struct{}, len(f.Components))
 
 	floINs, _ := f.IOs.SeparateINsOUTs()
@@ -369,7 +368,6 @@ func (f *Flo) Render(
 				ctx,
 				w,
 				c,
-				render,
 				rendered,
 			); err != nil {
 				return fmt.Errorf(
@@ -379,7 +377,7 @@ func (f *Flo) Render(
 		}
 	}
 
-	// TODO: handle orphaned components.
+	// handle orphaned components.
 	for _, c := range f.Components {
 		if _, found := rendered[c.ID]; found {
 			continue
@@ -389,7 +387,6 @@ func (f *Flo) Render(
 			ctx,
 			w,
 			c,
-			render,
 			rendered,
 		); err != nil {
 			return fmt.Errorf(
@@ -405,14 +402,10 @@ func (f *Flo) RenderComponent(
 	ctx context.Context,
 	w io.Writer,
 	c *Component,
-	render RenderFn,
 	rendered map[uuid.UUID]struct{},
 ) error {
 	if c == nil {
 		return errors.New("missing component")
-	}
-	if render == nil {
-		return errors.New("missing render function")
 	}
 	if rendered == nil {
 		return errors.New("missing rendered tracker")
@@ -448,7 +441,6 @@ func (f *Flo) RenderComponent(
 				ctx,
 				w,
 				outC,
-				render,
 				rendered,
 			); err != nil {
 				return err
@@ -456,9 +448,10 @@ func (f *Flo) RenderComponent(
 		}
 	}
 
-	if err := render(ctx, w, c); err != nil {
-		return err
-	}
+	// TODO: render component.
+	// if err := render(ctx, w, c); err != nil {
+	// 	return err
+	// }
 
 	rendered[c.ID] = struct{}{}
 

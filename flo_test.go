@@ -4,15 +4,12 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	"io"
 	"reflect"
 	"testing"
 
 	"github.com/mgjules/flo"
 	"github.com/stretchr/testify/require"
 )
-
-type floFn func(ctx context.Context, in int) (int, error)
 
 type compA struct {
 	val int
@@ -63,6 +60,7 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, pCtx)
+	require.NoError(t, f.AddIO(pCtx))
 
 	pIn, err := flo.NewComponentIO(
 		"in",
@@ -72,6 +70,7 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, pIn)
+	require.NoError(t, f.AddIO(pIn))
 
 	rInt, err := flo.NewComponentIO(
 		"",
@@ -81,6 +80,7 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, rInt)
+	require.NoError(t, f.AddIO(rInt))
 
 	rErr, err := flo.NewComponentIO(
 		"",
@@ -90,9 +90,7 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, rErr)
-
-	err = f.AddIOs(pCtx, pIn, rInt, rErr)
-	require.NoError(t, err)
+	require.NoError(t, f.AddIO(rErr))
 
 	compA, err := flo.NewComponent(
 		"CompA",
@@ -102,8 +100,7 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, compA)
-	err = f.AddComponent(compA)
-	require.NoError(t, err)
+	require.NoError(t, f.AddComponent(compA))
 
 	compB, err := flo.NewComponent(
 		"CompB",
@@ -113,8 +110,7 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, compB)
-	err = f.AddComponent(compB)
-	require.NoError(t, err)
+	require.NoError(t, f.AddComponent(compB))
 
 	compC, err := flo.NewComponent(
 		"CompC",
@@ -124,8 +120,7 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, compC)
-	err = f.AddComponent(compC)
-	require.NoError(t, err)
+	require.NoError(t, f.AddComponent(compC))
 
 	compD, err := flo.NewComponent(
 		"CompD",
@@ -135,8 +130,7 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, compD)
-	err = f.AddComponent(compD)
-	require.NoError(t, err)
+	require.NoError(t, f.AddComponent(compD))
 
 	compE, err := flo.NewComponent(
 		"CompE",
@@ -146,8 +140,7 @@ func TestFlo(t *testing.T) {
 	)
 	require.NoError(t, err)
 	require.NotNil(t, compE)
-	err = f.AddComponent(compE)
-	require.NoError(t, err)
+	require.NoError(t, f.AddComponent(compE))
 
 	t.Run("Cannot add component twice", func(t *testing.T) {
 		err = f.AddComponent(compC)
@@ -217,10 +210,7 @@ func TestFlo(t *testing.T) {
 
 	t.Run("Render", func(t *testing.T) {
 		buf := &bytes.Buffer{}
-		err = f.Render(context.Background(), buf, func(ctx context.Context, w io.Writer, c *flo.Component) error {
-			_, err := w.Write([]byte("[" + c.Label + "]"))
-			return err
-		})
+		err = f.Render(context.Background(), buf)
 		require.NoError(t, err)
 		require.Equal(t, "[Test Comp A Label][Test Comp D Label][Test Comp B Label][Test Comp C Label][Test Comp E Label]", buf.String())
 	})
