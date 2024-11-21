@@ -48,6 +48,8 @@ func TestFlo(t *testing.T) {
 		"TestSync",
 		"Test Flo Label",
 		"Test Flo Description",
+		"flo",
+		"Test Package Flo Description",
 	)
 	require.NoError(t, err)
 	require.NotNil(t, f)
@@ -96,6 +98,7 @@ func TestFlo(t *testing.T) {
 
 	compA, err := flo.NewComponent(
 		"CompA",
+		"githab.com/testuf/tera",
 		"Test Comp A Label",
 		"Test Comp A Description",
 		(compA{val: 10}).AddVal,
@@ -106,6 +109,7 @@ func TestFlo(t *testing.T) {
 
 	compB, err := flo.NewComponent(
 		"CompB",
+		"githab.com/testurrf/terb",
 		"Test Comp B Label",
 		"Test Comp B Description",
 		compBFn,
@@ -116,6 +120,7 @@ func TestFlo(t *testing.T) {
 
 	compC, err := flo.NewComponent(
 		"CompC",
+		"",
 		"Test Comp C Label",
 		"Test Comp C Description",
 		compCFn,
@@ -126,6 +131,7 @@ func TestFlo(t *testing.T) {
 
 	compD, err := flo.NewComponent(
 		"CompD",
+		"githab.com/testam/taaar",
 		"Test Comp D Label",
 		"Test Comp D Description",
 		compDFn,
@@ -136,6 +142,7 @@ func TestFlo(t *testing.T) {
 
 	compE, err := flo.NewComponent(
 		"CompE",
+		"gitlub.com/testing/teag",
 		"Test Comp E Label",
 		"Test Comp E Description",
 		compEFn,

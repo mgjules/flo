@@ -20,13 +20,15 @@ import (
 // IOs are just the function parameters and return values.
 // Nodes are called components and represent function calls.
 type Flo struct {
-	mu          sync.Mutex
-	ID          uuid.UUID
-	Name        string
-	Label       string
-	Description string
-	Components  map[uuid.UUID]*Component
-	IOs         IOs
+	mu             sync.Mutex
+	ID             uuid.UUID
+	Name           string
+	Label          string
+	Description    string
+	PkgName        string
+	PkgDescription string
+	Components     map[uuid.UUID]*Component
+	IOs            IOs
 
 	// handy to quickly find a connection details.
 	connectionIndex map[uuid.UUID]*ComponentConnection
@@ -35,6 +37,7 @@ type Flo struct {
 type Component struct {
 	ID          uuid.UUID
 	Name        string
+	PkgPath     string
 	Label       string
 	Description string
 	Value       reflect.Value // Enable use of instantiated object's methods or functions.
@@ -70,7 +73,10 @@ const (
 )
 
 // NewFlo needs fn to make IOs creation much more pleasant.
-func NewFlo(name, label, description string) (*Flo, error) {
+func NewFlo(
+	name, label, description string,
+	pkgName, pkgDescription string,
+) (*Flo, error) {
 	if name == "" {
 		return nil, errors.New("missing name")
 	}
@@ -87,6 +93,8 @@ func NewFlo(name, label, description string) (*Flo, error) {
 		Name:            name,
 		Label:           label,
 		Description:     description,
+		PkgName:         pkgName,
+		PkgDescription:  pkgDescription,
 		Components:      make(map[uuid.UUID]*Component),
 		IOs:             make(IOs, 0),
 		connectionIndex: make(map[uuid.UUID]*ComponentConnection),
@@ -380,10 +388,9 @@ func (f *Flo) Render(
 
 	// Generate the wrapper(flo) function.
 	var blockG *jen.Group
-	code := jen.
-		Comment(f.Description).
-		Line().
-		Func().Id(f.Name).
+	code := jen.NewFile(f.PkgName)
+	code.PackageComment(f.PkgDescription)
+	code.Func().Id(f.Name).
 		ParamsFunc(
 			func(g *jen.Group) {
 				for _, in := range floINs {
@@ -530,43 +537,51 @@ func (f *Flo) RenderComponent(
 
 	// Generate Go code.
 	var hasErrorReturn bool
-	g.Comment(c.Description).Line().ListFunc(func(g *jen.Group) {
-		for _, out := range outs {
-			if len(out.Connections) > 0 {
-				g.Id(out.Name)
-				continue
+	g.
+		Comment(c.Description).
+		Line().
+		ListFunc(func(g *jen.Group) {
+			for _, out := range outs {
+				if len(out.Connections) > 0 {
+					g.Id(out.Name)
+					continue
+				}
+				if out.IsError {
+					hasErrorReturn = true
+					g.Err()
+					continue
+				}
+				g.Id("_")
 			}
-			if out.IsError {
-				hasErrorReturn = true
-				g.Err()
-				continue
+		}).
+		Do(func(s *jen.Statement) {
+			if len(outs) > 0 {
+				s.Op(":=")
 			}
-			g.Id("_")
-		}
-	}).Do(func(s *jen.Statement) {
-		if len(outs) > 0 {
-			s.Op(":=")
-		}
-	}).Id(c.Name).CallFunc(func(g *jen.Group) {
-		for _, in := range ins {
-			g.Id(in.Name)
-		}
-	}).Line().Do(func(s *jen.Statement) {
-		if hasErrorReturn {
-			s.If(jen.Err().Op("!=").Nil()).Block(
-				jen.ReturnFunc(func(g *jen.Group) {
-					_, outs := f.IOs.SeparateINsOUTs()
-					for _, out := range outs {
-						if out.IsError {
-							g.Err()
-							continue
+		}).
+		Qual(c.PkgPath, c.Name).
+		CallFunc(func(g *jen.Group) {
+			for _, in := range ins {
+				g.Id(in.Name)
+			}
+		}).
+		Line().
+		Do(func(s *jen.Statement) {
+			if hasErrorReturn {
+				s.If(jen.Err().Op("!=").Nil()).Block(
+					jen.ReturnFunc(func(g *jen.Group) {
+						_, outs := f.IOs.SeparateINsOUTs()
+						for _, out := range outs {
+							if out.IsError {
+								g.Err()
+								continue
+							}
+							g.Id(fmt.Sprintf("%v", reflect.Zero(out.RType).Interface()))
 						}
-						g.Id(fmt.Sprintf("%v", reflect.Zero(out.RType).Interface()))
-					}
-				}),
-			).Line()
-		}
-	}).Line()
+					}),
+				).Line()
+			}
+		}).Line()
 
 	rendered[c.ID] = struct{}{}
 
@@ -574,7 +589,8 @@ func (f *Flo) RenderComponent(
 }
 
 func NewComponent(
-	name, label, description string,
+	name, pkgPath string,
+	label, description string,
 	fn any,
 ) (*Component, error) {
 	if name == "" {
@@ -584,6 +600,7 @@ func NewComponent(
 	c := Component{
 		ID:          uuid.New(),
 		Name:        name,
+		PkgPath:     pkgPath,
 		Label:       label,
 		Description: description,
 		Value:       reflect.ValueOf(fn),
