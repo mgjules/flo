@@ -364,6 +364,7 @@ func (f *Flo) DeleteConnection(connectionID uuid.UUID) error {
 		return fmt.Errorf("no component io id %q found on in component id %q", conn.InComponentIOID, conn.InComponentID)
 	}
 
+	inComponentIO.Name = ""
 	inComponentIO.Connections = make([]*ComponentConnection, 0)
 
 	return nil
@@ -375,7 +376,40 @@ func (f *Flo) Render(
 ) error {
 	rendered := make(map[uuid.UUID]struct{}, len(f.Components))
 
-	floINs, _ := f.IOs.SeparateINsOUTs()
+	floINs, floOUTs := f.IOs.SeparateINsOUTs()
+
+	// Generate the wrapper(flo) function.
+	var blockG *jen.Group
+	code := jen.
+		Comment(f.Description).
+		Line().
+		Func().Id(f.Name).
+		ParamsFunc(
+			func(g *jen.Group) {
+				for _, in := range floINs {
+					g.Id(in.Name).Id(in.RType.String())
+				}
+			}).
+		Do(
+			func(s *jen.Statement) {
+				if len(floOUTs) == 0 {
+					return
+				}
+				if len(floOUTs) == 1 {
+					s.Id(floOUTs[0].RType.String())
+				}
+				s.Parens(jen.ListFunc(func(g *jen.Group) {
+					for _, out := range floOUTs {
+						g.Id(out.RType.String())
+					}
+				}))
+			}).
+		BlockFunc(
+			func(g *jen.Group) {
+				blockG = g
+			},
+		)
+
 	// starts at the ingoing of a flo.
 	for _, in := range floINs {
 		for _, conn := range in.Connections {
@@ -390,7 +424,7 @@ func (f *Flo) Render(
 
 			if err := f.RenderComponent(
 				ctx,
-				w,
+				blockG,
 				c,
 				rendered,
 			); err != nil {
@@ -409,7 +443,7 @@ func (f *Flo) Render(
 
 		if err := f.RenderComponent(
 			ctx,
-			w,
+			blockG,
 			c,
 			rendered,
 		); err != nil {
@@ -419,12 +453,34 @@ func (f *Flo) Render(
 		}
 	}
 
+	// Generate the return statement.
+	blockG.
+		ReturnFunc(
+			func(g *jen.Group) {
+				for _, out := range floOUTs {
+					if len(out.Connections) > 0 {
+						g.Id(out.Name)
+						continue
+					}
+					if out.IsError {
+						g.Nil()
+						continue
+					}
+					g.Id(fmt.Sprintf("%v", reflect.Zero(out.RType).Interface()))
+				}
+			},
+		)
+
+	if err := code.Render(w); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func (f *Flo) RenderComponent(
 	ctx context.Context,
-	w io.Writer,
+	g *jen.Group,
 	c *Component,
 	rendered map[uuid.UUID]struct{},
 ) error {
@@ -463,7 +519,7 @@ func (f *Flo) RenderComponent(
 
 			if err := f.RenderComponent(
 				ctx,
-				w,
+				g,
 				outC,
 				rendered,
 			); err != nil {
@@ -472,8 +528,9 @@ func (f *Flo) RenderComponent(
 		}
 	}
 
+	// Generate Go code.
 	var hasErrorReturn bool
-	code := jen.Comment(c.Description).Line().ListFunc(func(g *jen.Group) {
+	g.Comment(c.Description).Line().ListFunc(func(g *jen.Group) {
 		for _, out := range outs {
 			if len(out.Connections) > 0 {
 				g.Id(out.Name)
@@ -496,7 +553,7 @@ func (f *Flo) RenderComponent(
 		}
 	}).Line().Do(func(s *jen.Statement) {
 		if hasErrorReturn {
-			s.If(jen.Err().Op("!=").Id("nil")).Block(
+			s.If(jen.Err().Op("!=").Nil()).Block(
 				jen.ReturnFunc(func(g *jen.Group) {
 					_, outs := f.IOs.SeparateINsOUTs()
 					for _, out := range outs {
@@ -510,9 +567,6 @@ func (f *Flo) RenderComponent(
 			).Line()
 		}
 	}).Line()
-	if err := code.Render(w); err != nil {
-		return err
-	}
 
 	rendered[c.ID] = struct{}{}
 
