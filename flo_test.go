@@ -76,7 +76,7 @@ func TestFlo(t *testing.T) {
 		require.NoError(t, f.AddIO(pIn))
 
 		rInt, err := flo.NewComponentIO(
-			"",
+			"result",
 			flo.ComponentIOTypeOUT,
 			reflect.TypeFor[int](),
 			f.ID,
@@ -86,7 +86,7 @@ func TestFlo(t *testing.T) {
 		require.NoError(t, f.AddIO(rInt))
 
 		rErr, err := flo.NewComponentIO(
-			"",
+			"err",
 			flo.ComponentIOTypeOUT,
 			reflect.TypeFor[error](),
 			f.ID,
@@ -221,7 +221,41 @@ func TestFlo(t *testing.T) {
 		buf := &bytes.Buffer{}
 		err = f.Render(context.Background(), buf)
 		require.NoError(t, err)
-		require.Equal(t, "[Test Comp A Label][Test Comp D Label][Test Comp B Label][Test Comp C Label][Test Comp E Label]", buf.String())
+		require.Equal(t, `// Test Package Flo Description
+package flo
+
+import (
+	taaar "githab.com/testam/taaar"
+	tera "githab.com/testuf/tera"
+	terb "githab.com/testurrf/terb"
+	teag "gitlub.com/testing/teag"
+)
+
+func TestSync(ctx context.Context, in int) (int, error) {
+	// Test Comp A Description
+	ioff39613112342A272B0Edf2D60F8Cedd6Da8A1A0 := tera.CompA(ctx, in)
+
+	// Test Comp D Description
+	ioa94Cdb2B64820B08Fbac3Df6700F0418263458Cc := taaar.CompD()
+
+	// Test Comp B Description
+	iod8E895F4A10213A36E8626E91E455191C1886Cb0, err := terb.CompB(in, ioa94Cdb2B64820B08Fbac3Df6700F0418263458Cc)
+	if err != nil {
+		return 0, err
+	}
+
+	// Test Comp C Description
+	io4030D6863B5E12Eb7B3B88C39Adeac1995618375, err := CompC(ctx, ioff39613112342A272B0Edf2D60F8Cedd6Da8A1A0, iod8E895F4A10213A36E8626E91E455191C1886Cb0)
+	if err != nil {
+		return 0, err
+	}
+
+	// Test Comp E Description
+	teag.CompE()
+
+	return io4030D6863B5E12Eb7B3B88C39Adeac1995618375, nil
+}
+`, buf.String())
 	})
 
 	// f.PrettyDump(os.Stdout)

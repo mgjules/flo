@@ -2,6 +2,7 @@ package flo
 
 import (
 	"context"
+	"crypto/sha1"
 	"errors"
 	"fmt"
 	"io"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/dave/jennifer/jen"
 	"github.com/google/uuid"
-	"github.com/rs/xid"
 	"github.com/samber/lo"
 	"github.com/yassinebenaid/godump"
 )
@@ -606,11 +606,9 @@ func NewComponent(
 		Value:       reflect.ValueOf(fn),
 	}
 
-	ios, err := NewComponentIOsFromFunc(c.ID, c.Value)
-	if err != nil {
+	if err := NewComponentIOsFromComponent(&c); err != nil {
 		return nil, fmt.Errorf("cannot generate component ios: %v", err)
 	}
-	c.IOs = ios
 
 	return &c, nil
 }
@@ -624,8 +622,8 @@ func NewComponentIO(
 	if typ == ComponentIOTypeUnknown {
 		return nil, errors.New("unknown component io type")
 	}
-	if name == "" && typ == ComponentIOTypeOUT {
-		name = `io` + xid.New().String()
+	if name != "" {
+		name = lo.CamelCase(name)
 	}
 	if rType == nil || rType.Kind() == reflect.Invalid {
 		return nil, errors.New("invalid component io reflect type")
@@ -644,47 +642,48 @@ func NewComponentIO(
 	}, nil
 }
 
-func NewComponentIOsFromFunc(parentID uuid.UUID, v reflect.Value) (IOs, error) {
-	if parentID == uuid.Nil {
-		return nil, errors.New("invalid parent ID")
+func NewComponentIOsFromComponent(c *Component) error {
+	if c.ID == uuid.Nil {
+		return errors.New("invalid parent ID")
 	}
-	if !v.IsValid() || v.Kind() != reflect.Func {
-		return nil, fmt.Errorf("value of type %q must be a function", v.Kind())
+	if !c.Value.IsValid() || c.Value.Kind() != reflect.Func {
+		return fmt.Errorf("value of kind %q is not a function", c.Value.Kind())
 	}
 
-	vt := v.Type()
-	ios := make(IOs, 0, vt.NumIn()+vt.NumOut())
+	vt := c.Value.Type()
+	c.IOs = make(IOs, 0, vt.NumIn()+vt.NumOut())
 	for i := 0; i < vt.NumIn(); i++ {
 		p := vt.In(i)
 		e, err := NewComponentIO(
-			"",
+			"", // Takes the name of the output io during connection.
 			ComponentIOTypeIN,
 			p,
-			parentID,
+			c.ID,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("unexpected error for argument %d: %w", i+1, err)
+			return fmt.Errorf("unexpected error for argument %d: %w", i+1, err)
 		}
 
-		ios = append(ios, e)
+		c.IOs = append(c.IOs, e)
 	}
 
 	for i := 0; i < vt.NumOut(); i++ {
 		r := vt.Out(i)
+		data := sha1.Sum([]byte(fmt.Sprintf("%s-%s-%d", c.PkgPath, c.Name, i)))
 		e, err := NewComponentIO(
-			"",
+			fmt.Sprintf("io%x", data),
 			ComponentIOTypeOUT,
 			r,
-			parentID,
+			c.ID,
 		)
 		if err != nil {
-			return nil, fmt.Errorf("unexpected error for return value %d: %w", i+1, err)
+			return fmt.Errorf("unexpected error for return value %d: %w", i+1, err)
 		}
 
-		ios = append(ios, e)
+		c.IOs = append(c.IOs, e)
 	}
 
-	return ios, nil
+	return nil
 }
 
 func NewComponentConnect(
