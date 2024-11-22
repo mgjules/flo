@@ -7,6 +7,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/samber/lo v1.47.0
 	github.com/stretchr/testify v1.9.0
+	github.com/traefik/yaegi v0.16.1
 	github.com/yassinebenaid/godump v0.11.1
 )
 

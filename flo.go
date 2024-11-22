@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"strings"
 	"sync"
 
 	"github.com/dave/jennifer/jen"
@@ -382,6 +383,9 @@ func (f *Flo) Render(
 	ctx context.Context,
 	w io.Writer,
 ) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	rendered := make(map[uuid.UUID]struct{}, len(f.Components))
 
 	floINs, floOUTs := f.IOs.SeparateINsOUTs()
@@ -589,6 +593,30 @@ func (f *Flo) RenderComponent(
 	return nil
 }
 
+func (f *Flo) Symbols() map[string]map[string]reflect.Value {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	symbols := map[string]map[string]reflect.Value{}
+
+	for _, c := range f.Components {
+		if c.Name == "" || c.PkgPath == "" {
+			continue
+		}
+
+		split := strings.Split(c.PkgPath, "/")
+		pkgPath := c.PkgPath + "/" + split[len(split)-1]
+
+		if _, found := symbols[pkgPath]; !found {
+			symbols[pkgPath] = map[string]reflect.Value{}
+		}
+
+		symbols[pkgPath][c.Name] = c.Value
+	}
+
+	return symbols
+}
+
 func NewComponent(
 	name, pkgPath string,
 	label, description string,
@@ -596,6 +624,9 @@ func NewComponent(
 ) (*Component, error) {
 	if name == "" {
 		return nil, errors.New("missing name")
+	}
+	if pkgPath == "" {
+		return nil, errors.New("missing pkg path")
 	}
 
 	c := Component{
