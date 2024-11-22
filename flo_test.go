@@ -77,6 +77,16 @@ func TestFlo(t *testing.T) {
 		require.NotNil(t, pIn)
 		require.NoError(t, f.AddIO(pIn))
 
+		pUnused, err := flo.NewComponentIO(
+			"unused",
+			flo.ComponentIOTypeIN,
+			reflect.TypeFor[int](),
+			f.ID,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, pUnused)
+		require.NoError(t, f.AddIO(pUnused))
+
 		rInt, err := flo.NewComponentIO(
 			"result",
 			flo.ComponentIOTypeOUT,
@@ -204,7 +214,7 @@ func TestFlo(t *testing.T) {
 			err = f.ConnectComponent(compB.ID, compB.IOs[2].ID, compC.ID, compC.IOs[2].ID)
 			require.NoError(t, err)
 
-			err = f.ConnectComponent(compC.ID, compC.IOs[3].ID, f.ID, f.IOs[2].ID)
+			err = f.ConnectComponent(compC.ID, compC.IOs[3].ID, f.ID, f.IOs[3].ID)
 			require.NoError(t, err)
 		})
 
@@ -229,13 +239,14 @@ func TestFlo(t *testing.T) {
 package flo
 
 import (
+	"context"
 	taaar "githab.com/testam/taaar"
 	tera "githab.com/testuf/tera"
 	terb "githab.com/testurrf/terb"
 	teag "gitlub.com/testing/teag"
 )
 
-func TestSync(ctx context.Context, in int) (int, error) {
+func TestSync(ctx context.Context, in int, _ int) (int, error) {
 	// Test Comp A Description
 	ioff39613112342A272B0Edf2D60F8Cedd6Da8A1A0 := tera.CompA(ctx, in)
 
@@ -270,7 +281,6 @@ func TestSync(ctx context.Context, in int) (int, error) {
 
 		require.NoError(t, i.Use(stdlib.Symbols))
 		require.NoError(t, i.Use(symbols))
-		i.ImportUsed()
 
 		_, err := i.Eval(src.String())
 		require.NoError(t, err)
@@ -280,14 +290,13 @@ func TestSync(ctx context.Context, in int) (int, error) {
 		require.True(t, v.IsValid())
 		require.True(t, v.CanInterface())
 
-		testSync, ok := v.Interface().(func(context.Context, int) (int, error))
+		testSync, ok := v.Interface().(func(context.Context, int, int) (int, error))
 		require.True(t, ok)
 
-		result, err := testSync(context.Background(), 2)
+		result, err := testSync(context.Background(), 2, 0)
 		require.NoError(t, err)
 		require.Equal(t, 15, result)
 	})
 
 	// f.PrettyDump(os.Stdout)
-	// t.FailNow()
 }

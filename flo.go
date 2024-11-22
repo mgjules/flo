@@ -399,7 +399,13 @@ func (f *Flo) Render(
 		ParamsFunc(
 			func(g *jen.Group) {
 				for _, in := range floINs {
-					g.Id(in.Name).Id(in.RType.String())
+					g.Do(func(s *jen.Statement) {
+						if len(in.Connections) > 0 {
+							s.Id(in.Name)
+							return
+						}
+						s.Id("_")
+					}).Qual(in.RType.PkgPath(), in.RType.Name())
 				}
 			}).
 		Do(
