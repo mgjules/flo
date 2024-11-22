@@ -414,11 +414,11 @@ func (f *Flo) Render(
 					return
 				}
 				if len(floOUTs) == 1 {
-					s.Id(floOUTs[0].RType.String())
+					s.Qual(floOUTs[0].RType.PkgPath(), floOUTs[0].RType.Name())
 				}
 				s.Parens(jen.ListFunc(func(g *jen.Group) {
 					for _, out := range floOUTs {
-						g.Id(out.RType.String())
+						g.Qual(out.RType.PkgPath(), out.RType.Name())
 					}
 				}))
 			}).
